@@ -178,6 +178,8 @@ WebFlux 响应式编程 类似RxJava的通知订阅模式
 
 对于现有的Servlet模式改动在于Controller层以及Filter层 Filter层改动较大 Controller层改动较小
 
+同样webflux也可对返回值进行包装 因此Controller层的返回值 可仍旧沿用Servlet下的返回相关业务实体对象
+
 样例Controller:
 ```
 @GetMapping("/list")
@@ -207,5 +209,199 @@ public Mono<UserVO> get(@RequestParam("id") Integer id) {
 ```
 上述样例中 返回列表使用Flux.fromInerable包装 对象使用Mono包装
 
-<font color='red'>个人不建议在生产环境使用webflux 由于与Servlet 相差较大 请评估后使用</font>
+```
+// GlobalResponseBodyHandler.java
+
+public class GlobalResponseBodyHandler extends ResponseBodyResultHandler {
+
+    private static Logger LOGGER = LoggerFactory.getLogger(GlobalResponseBodyHandler.class);
+
+    private static MethodParameter METHOD_PARAMETER_MONO_COMMON_RESULT;
+
+    private static final CommonResult COMMON_RESULT_SUCCESS = CommonResult.success(null);
+
+    static {
+        try {
+            // <1> 获得 METHOD_PARAMETER_MONO_COMMON_RESULT 。其中 -1 表示 `#methodForParams()` 方法的返回值
+            METHOD_PARAMETER_MONO_COMMON_RESULT = new MethodParameter(
+                    GlobalResponseBodyHandler.class.getDeclaredMethod("methodForParams"), -1);
+        } catch (NoSuchMethodException e) {
+            LOGGER.error("[static][获取 METHOD_PARAMETER_MONO_COMMON_RESULT 时，找不都方法");
+            throw new RuntimeException(e);
+        }
+    }
+
+    public GlobalResponseBodyHandler(List<HttpMessageWriter<?>> writers, RequestedContentTypeResolver resolver) {
+        super(writers, resolver);
+    }
+
+    public GlobalResponseBodyHandler(List<HttpMessageWriter<?>> writers, RequestedContentTypeResolver resolver, ReactiveAdapterRegistry registry) {
+        super(writers, resolver, registry);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Mono<Void> handleResult(ServerWebExchange exchange, HandlerResult result) {
+        Object returnValue = result.getReturnValue();
+        Object body;
+        // <1.1> 处理返回结果为 Mono 的情况
+        if (returnValue instanceof Mono) {
+            body = ((Mono<Object>) result.getReturnValue())
+                    .map((Function<Object, Object>) GlobalResponseBodyHandler::wrapCommonResult)
+                    .defaultIfEmpty(COMMON_RESULT_SUCCESS);
+        // <1.2> 处理返回结果为 Flux 的情况
+        } else if (returnValue instanceof Flux) {
+            body = ((Flux<Object>) result.getReturnValue())
+                    .collectList()
+                    .map((Function<Object, Object>) GlobalResponseBodyHandler::wrapCommonResult)
+                    .defaultIfEmpty(COMMON_RESULT_SUCCESS);
+        // <1.3> 处理结果为其它类型
+        } else {
+            body = wrapCommonResult(returnValue);
+        }
+        // <2>
+        return writeBody(body, METHOD_PARAMETER_MONO_COMMON_RESULT, exchange);
+    }
+
+    private static Mono<CommonResult> methodForParams() {
+        return null;
+    }
+
+    private static CommonResult<?> wrapCommonResult(Object body) {
+        // 如果已经是 CommonResult 类型，则直接返回
+        if (body instanceof CommonResult) {
+            return (CommonResult<?>) body;
+        }
+        // 如果不是，则包装成 CommonResult 类型
+        return CommonResult.success(body);
+    }
+
+}
+```
+**个人不建议在生产环境使用webflux 由于与Servlet 相差较大 请评估后使用**
+
+##### 1.6.1. WebFlux Filter
+
+SpringMVC中可实现HandlerInterceptor接口来拦截请求，在WebFlux中 可实现WebFilter来实现相同的逻辑
+```
+// DemoWebFilterWebFilter.java
+
+/**
+ * Contract for interception-style, chained processing of Web requests that may
+ * be used to implement cross-cutting, application-agnostic requirements such
+ * as security, timeouts, and others.
+ *
+ * @author Rossen Stoyanchev
+ * @since 5.0
+ */
+public interface WebFilter {
+
+	/**
+	 * Process the Web request and (optionally) delegate to the next
+	 * {@code WebFilter} through the given {@link WebFilterChain}.
+	 * @param exchange the current server exchange
+	 * @param chain provides a way to delegate to the next filter
+	 * @return {@code Mono<Void>} to indicate when request processing is complete
+	 */
+	Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain);
+
+}
+```
+样例WebFilter
+```
+@Component
+@Order(1)
+public class DemoWebFilter implements WebFilter {
+
+    private Logger logger = LoggerFactory.getLogger(getClass());
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange serverWebExchange, WebFilterChain webFilterChain) {
+        // <1> 继续执行请求
+        return webFilterChain.filter(serverWebExchange)
+                .doOnSuccess(new Consumer<Void>() { // <2> 执行成功后回调
+
+                    @Override
+                    public void accept(Void aVoid) {
+                        logger.info("[accept][执行成功]");
+                    }
+
+                });
+    }
+
+}
+```
+Mono存在doOnSuccess方法表示执行成功之后 Mono还有诸如doOnError等方法 具体请参照[Reactor Mono](https://projectreactor.io/docs/core/release/api/reactor/core/publisher/Mono.html)
+
+个人建议不采用上述的样例Filter中filter写法，建议下面的写法
+```
+@Override
+public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+	ServerHttpRequest request = exchange.getRequest();
+	// 如果是 CORS 跨域请求
+	if (CorsUtils.isCorsRequest(request)) {
+	    // 获得该接口的 CORS 跨域请求的配置
+	    CorsConfiguration corsConfiguration = this.configSource.getCorsConfiguration(exchange);
+	    if (corsConfiguration != null) {
+		    // 执行 CORS 跨域请求的处理，
+		    boolean isValid = this.processor.process(corsConfiguration, exchange);
+		    // !isValid 表示，如果跨域请求的校验不通过
+		    // CorsUtils.isPreFlightRequest(request) 表示，是 OPTIONS “预检请求”
+		    if (!isValid || CorsUtils.isPreFlightRequest(request)) {
+		        // 直接返回空的 Mono ，不进行后续的处理
+		        return Mono.empty();
+	        }
+	    }
+	}
+	// 继续过滤器的处理
+	return chain.filter(exchange);
+}
+```
+
+上述样例在相对于SpringMVC Filter return false 的时候返回一个空的Mono来终止后续Filter执行，在当前Filter 通过时返回chain.filter(exchange)来继续执行剩下的Filter
+
+##### 1.6.2. R2DBC
+R2DBC(响应式的关系数据库连接)，是一种将响应式 API 引入 SQL 数据库的尝试。
+
+此处记录的是 [jasync-sql](https://github.com/jasync-sql/jasync-sql)
+- 基于 Netty 实现
+- 异步、高性能、可靠的 PostgreSQL、MySQL 的驱动
+- 使用 Kotlin 语言编写
+
+```
+// DatabaseConfiguration.java
+
+@Configuration
+@EnableTransactionManagement // 开启事务的支持
+public class DatabaseConfiguration {
+
+    @Bean
+    public ConnectionFactory connectionFactory(R2dbcProperties properties) throws URISyntaxException {
+        // 从 R2dbcProperties 中，解析出 host、port、database
+        URI uri = new URI(properties.getUrl());
+        String host = uri.getHost();
+        int port = uri.getPort();
+        String database = uri.getPath().substring(1); // 去掉首位的 / 斜杠
+        // 创建 jasync Configuration 配置配置对象
+        com.github.jasync.sql.db.Configuration configuration = new com.github.jasync.sql.db.Configuration(
+                properties.getUsername(), host, port, properties.getPassword(), database);
+        // 创建 JasyncConnectionFactory 对象
+        return  new JasyncConnectionFactory(new MySQLConnectionFactory(configuration));
+    }
+
+    @Bean
+    public ReactiveTransactionManager transactionManager(R2dbcProperties properties) throws URISyntaxException {
+        return new R2dbcTransactionManager(this.connectionFactory(properties));
+    }
+
+}
+```
+
+#### 1.7. 分布式Session
+
+多机部署的时候会出现用户登录到一台服务器上 之后tomcat检测cookie值不存在，然后生成一个sessionId并回写给Client，随后Client在另一台机器上登录，被nginx路由至另一台Tomcat，然而cookie所带的sessionId无法在这台Tomcat上找到对应session，这里又被创建了一个session，两台Tomcat需要做Session一致性，有以下方案：
+
+- Tomcat做集群 session复制
+- Nginx session 黏连
+- Session存放至redis、mysql等数据库中
 
