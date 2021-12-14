@@ -405,3 +405,40 @@ public class DatabaseConfiguration {
 - Nginx session 黏连
 - Session存放至redis、mysql等数据库中
 
+此处建议将Session放到redis中 然后redis做集群配置 使session同步
+```
+// SessionConfiguration.java
+
+@Configuration
+@EnableRedisHttpSession // 自动化配置 Spring Session 使用 Redis 作为数据源
+public class SessionConfiguration {
+
+    /**
+     * 创建 {@link RedisOperationsSessionRepository} 使用的 RedisSerializer Bean 。
+     *
+     * 具体可以看看 {@link RedisHttpSessionConfiguration#setDefaultRedisSerializer(RedisSerializer)} 方法，
+     * 它会引入名字为 "springSessionDefaultRedisSerializer" 的 Bean 。
+     *
+     * @return RedisSerializer Bean
+     */
+    @Bean(name = "springSessionDefaultRedisSerializer")
+    public RedisSerializer springSessionDefaultRedisSerializer() {
+        return RedisSerializer.json();
+    }
+
+}
+```
+随后可直接调用 session.setAttribute(key, value); 来设定session
+每一个 Session 对应 Redis 两个 key-value 键值对。
+开头：以 spring:session 开头，可以通过 @EnableRedisHttpSession 注解的 redisNamespace 属性配置。
+
+结尾：以对应 Session 的 sessionid 结尾。
+
+中间：中间分别是 "session"、"expirations"、sessions:expires 。一般情况下，我们只需要关注中间为 "session" 的 key-value 键值对即可，它负责真正存储 Session 数据。
+
+对于中间为 "sessions:expires" 和 "expirations" 的两个来说，主要为了实现主动删除 Redis 过期的 Session 会话，解决 Redis 惰性删除的“问题”。
+
+"spring:session:expirations:{时间戳}" ，是为了获得每分钟需要过期的 sessionid 集合，即 {时间戳} 是每分钟的时间戳。
+
+##### 1.7.1. Spring Security + Spring Session
+
