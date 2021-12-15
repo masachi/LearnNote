@@ -1,6 +1,6 @@
-### Spring Boot
+## Spring Boot
 
-##### Spring maven包相关
+#### Spring maven包相关
 [spring-boot-starter-web](https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-web): SpringMVC相关依赖，Server容器采用Tomcat
 
 [spring-boot-autoconfigure](https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-autoconfigure)：SpringBoot自动化配置
@@ -13,7 +13,7 @@
 
 自用root pom 文件可见 [链接]()
 
-#### 1.1. SpringBoot 注解相关
+### 1.1. SpringBoot 注解相关
 通过在类上添加 @Configuration 注解，声明这是一个 Spring 配置类。
 通过在方法上添加 @Bean 注解，声明该方法创建一个 Spring Bean。
 
@@ -23,7 +23,7 @@ AutoConfiguration通过SpringFactoriesLoader 读取spring.factories注册
 
 @Profile注解 通过pom中的profile来判定是否注册当前bean 一般来说用不上
 
-##### 1.1.1. 自定义注解
+#### 1.1.1. 自定义注解
 ```
 /**
  * @description: 自定义注解, 用于控制层统一处理封装结果, 异常, 日志和告警功能;
@@ -89,10 +89,10 @@ public class LoggableRestControllerHelper {
 ```
 这里的自定义注解 target表示用在什么类型之上，type类型包含class interface 等，然后使用Spring AOP切片 通过注解切分 随后在切片位置获取信息之后包装返回
 
-#### 1.2. 热部署
+### 1.2. 热部署
 某些脚本语言可使用热部署，例如PHP，只需要把代码文件放到nginx中即可完成部署，Java相关的需要编译成class文件才能给到执行，因此热部署方式目前由idea提供插件实现，或者采用spring-boot-devtools来实现，但是spring-boot-devtools不是热部署 而是快速重启
 
-#### 1.3. Lombok
+### 1.3. Lombok
 常用的注解如下
 |注解|描述|
 |:--:|:--:|
@@ -107,7 +107,7 @@ public class LoggableRestControllerHelper {
 |@SneakyThrows|添加在方法上，设定try catch|
 |@NonNull|添加在方法参数 类属性上，校验是否null|
 
-#### 1.4. MapStruct
+### 1.4. MapStruct
 MapStruct可用BeaaUtils 等其他方式替代 此处仅作记录 按照项目以及个人习惯使用 对象转换或者复制方法
 MapStruct 是用于生成类型安全的 Bean 映射类的 Java 注解处理器。
 
@@ -135,7 +135,7 @@ public interface UserConvert {
 ```
 @Mapping注解可用于convert相关方法上 用于当实体类key不相等时使用 ```@Mapping(source="source", target="target")```
 
-#### 1.5. 拦截器
+### 1.5. 拦截器
 
 拦截器一般用作access_token验证、用户信息获取之类情景下，通过对相关请求进行拦截，获取request header中一些信息来反查当前信息所对应的用户是否有权限操作，同时一般将用户信息存放至request attributes或者ThreadLocal中用作后续业务中使用，
 ```
@@ -170,7 +170,7 @@ afterCompletion 实现请求完成之后的处理逻辑 诸如 释放资源、�
 
 当出现异常时，任意一个interceptor抛出的Exception不影响其他interceptor的执行
 
-#### 1.6. [WebFlux](https://www.v2ex.com/t/507828)
+### 1.6. [WebFlux](https://www.v2ex.com/t/507828)
 
 ![](https://static.iocoder.cn/8d45025963c78e6cb191676fd6e9ec44)
 
@@ -280,7 +280,7 @@ public class GlobalResponseBodyHandler extends ResponseBodyResultHandler {
 ```
 **个人不建议在生产环境使用webflux 由于与Servlet 相差较大 请评估后使用**
 
-##### 1.6.1. WebFlux Filter
+#### 1.6.1. WebFlux Filter
 
 SpringMVC中可实现HandlerInterceptor接口来拦截请求，在WebFlux中 可实现WebFilter来实现相同的逻辑
 ```
@@ -360,7 +360,7 @@ public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
 
 上述样例在相对于SpringMVC Filter return false 的时候返回一个空的Mono来终止后续Filter执行，在当前Filter 通过时返回chain.filter(exchange)来继续执行剩下的Filter
 
-##### 1.6.2. R2DBC
+#### 1.6.2. R2DBC
 R2DBC(响应式的关系数据库连接)，是一种将响应式 API 引入 SQL 数据库的尝试。
 
 此处记录的是 [jasync-sql](https://github.com/jasync-sql/jasync-sql)
@@ -397,7 +397,7 @@ public class DatabaseConfiguration {
 }
 ```
 
-#### 1.7. 分布式Session
+### 1.7. 分布式Session
 
 多机部署的时候会出现用户登录到一台服务器上 之后tomcat检测cookie值不存在，然后生成一个sessionId并回写给Client，随后Client在另一台机器上登录，被nginx路由至另一台Tomcat，然而cookie所带的sessionId无法在这台Tomcat上找到对应session，这里又被创建了一个session，两台Tomcat需要做Session一致性，有以下方案：
 
@@ -440,5 +440,5 @@ public class SessionConfiguration {
 
 "spring:session:expirations:{时间戳}" ，是为了获得每分钟需要过期的 sessionid 集合，即 {时间戳} 是每分钟的时间戳。
 
-##### 1.7.1. Spring Security + Spring Session
+#### 1.7.1. Spring Security + Spring Session
 
