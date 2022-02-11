@@ -2,6 +2,9 @@
 
 ### 1. Gradle Example 
 此处提供一个自用得Gradle Dependencies，由于是多年前的Dependencies，版本一定不是最新的，请参考使用
+<details>
+<summary>Dependencies</summary>
+
 ```
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
@@ -124,6 +127,7 @@ dependencies {
     implementation 'com.github.barteksc:android-pdf-viewer:3.1.0-beta.1'
 }
 ```
+</details>
 
 同时推几个网址
 - [awesome-android-ui](https://github.com/wasabeef/awesome-android-ui)
@@ -132,6 +136,9 @@ dependencies {
 
 ### 2. Retrofit
 据我所知，retrofit多用于Android上，Server之间通信一般用Eureka或者nacos等注册中心 或者是 Dubbo、Feign等RPC
+<details>
+<summary>Retrofit Api</summary>
+
 ```
 public class ServerApi{
     private static ServerApi api;
@@ -203,7 +210,11 @@ public class TokenInterceptor implements Interceptor {
 
 }
 ```
-Common Header Interceptor
+</details>
+
+<details>
+<summary>Common Header Interceptor</summary>
+
 ```
 public class HttpHeaderInterceptor implements Interceptor {
     private Map<String,String> headerParams = new HashMap<>();
@@ -259,7 +270,11 @@ public class HttpHeaderInterceptor implements Interceptor {
     }
 }
 ```
-ConvertFactory
+</details>
+
+<details>
+<summary>ConvertFactory</summary>
+
 ```
 public class ConverterFactory extends Converter.Factory {
 
@@ -302,7 +317,11 @@ public class ConverterFactory extends Converter.Factory {
     }
 }
 ```
-Request/Response Body Converter
+</details>
+
+<details>
+<summary>Request/Response Body Converter</summary>
+
 ```
 public class RequestBodyConverter<T> implements Converter<T, RequestBody> {
 
@@ -399,7 +418,11 @@ public class ResponseBodyConverter<T> implements Converter<ResponseBody, T> {
     }
 }
 ```
-Request/Response Entity
+</details>
+
+<details>
+<summary>Request/Response Entity</summary>
+
 ```
 public class Request<T> {
 
@@ -462,6 +485,8 @@ public class Response<T> {
     }
 }
 ```
+</details>
+
 ### 3. RxJava
 RxJava原理：
 
@@ -476,6 +501,9 @@ RxJava运算符：
 
 #### 3.1 RxJava & Retrofit
 #### 3.1.1 传统请求
+<details>
+<summary>例子</summary>
+
 描述网络请求接口
 ```
 // 传统方式：Call<..>接口形式
@@ -568,10 +596,14 @@ ServerApi.defaultInstance() // ServerApi封装了domain 、Header、request resp
                     }
                 });
 ```
+</details>
+
 #### 3.1.2 嵌套请求
 嵌套请求通过使用flatMap在处理完上一个请求之后返回下一个Observable
 
-栗子：
+<details>
+<summary>例子</summary>
+
 ```
 public class FileUpload {
 
@@ -691,7 +723,12 @@ public class FileUpload {
     }
 }
 ```
+</details>
+
 #### 3.1.3 重试
+<details>
+<summary>栗子</summary>
+
 ```
 发送网络请求 & 通过retryWhen（）进行重试
 // 注：主要异常才会回调retryWhen（）进行重试
@@ -785,3 +822,4 @@ observable.retryWhen(new Function<Observable<Throwable>, ObservableSource<?>>() 
  }
 
 ```
+</details>
