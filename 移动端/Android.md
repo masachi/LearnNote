@@ -462,3 +462,326 @@ public class Response<T> {
     }
 }
 ```
+### 3. RxJava
+RxJava原理：
+
+被观察者 （Observable） 通过 订阅（Subscribe） 按顺序发送事件 给观察者 （Observer）
+
+观察者（Observer） 按顺序接收事件 & 作出对应的响应动作。
+![](https://upload-images.jianshu.io/upload_images/944365-98ec92df0a4d7e0b.png?imageMogr2/auto-orient/strip|imageView2/2/w/1200/format/webp)
+
+RxJava大部分情况还是用在网络请求上，Android的主线程是不建议做耗时的任务。
+RxJava运算符：
+![](https://upload-images.jianshu.io/upload_images/944365-9f293680e658ba29.png)
+
+#### 3.1 RxJava & Retrofit
+#### 3.1.1 传统请求
+描述网络请求接口
+```
+// 传统方式：Call<..>接口形式
+public interface GetRequest_Interface {
+ @GET("url地址")
+    Call<Translation> getCall();
+    // 注解里传入 网络请求 的部分URL地址
+    // getCall()是接受网络请求数据的方法
+}
+
+//  RxJava 方式：Observable<..>接口形式
+ @GET("url地址") // 这里只需要写path就行
+public interface GetRequest_Interface {
+Observable<Translation> getCall();
+```
+Retrofit发起请求
+```
+<-- 传统方式 ->>
+        // 1. 创建 网络请求接口 的实例
+        GetRequest_Interface request = retrofit.create(GetRequest_Interface.class);
+
+        // 2. 采用Call<..>接口 对 发送请求 进行封装
+        Call<Translation> call = request.getCall();
+
+        // 3. 发送网络请求(异步)
+        call.enqueue(new Callback<Translation>() {
+            // 请求成功时回调
+            @Override
+            public void onResponse(Call<Translation> call, Response<Translation> response) {
+                 ...  
+            }
+
+            // 请求失败时回调
+            @Override
+            public void onFailure(Call<Translation> call, Throwable throwable) {
+                ....
+            }
+        });
+
+
+<-- RxJava 版方式 ->>
+        // 1. 创建 网络请求接口 的实例
+        GetRequest_Interface request = retrofit.create(GetRequest_Interface.class);
+
+        // 2. 采用Observable<...>形式 对 网络请求 进行封装
+        Observable<Translation> observable = request.getCall();
+        
+        // 3. 发送网络请求(异步)
+        observable.subscribeOn(Schedulers.io())               // 在IO线程进行网络请求
+                  .observeOn(AndroidSchedulers.mainThread())  // 回到主线程 处理请求结果
+                  .subscribe(new Observer<Translation>() {
+
+                    // 发送请求后调用该复写方法（无论请求成功与否）
+                    @Override
+                    public void onSubscribe(Disposable d) {
+                        ...// 初始化工作
+                      }
+                    
+                    // 发送请求成功后调用该复写方法
+                    @Override
+                    public void onNext(Translation result) {
+                        ...// 对返回结果Translation类对象 进行处理
+                    }
+
+                    // 发送请求成功后，先调用onNext（）再调用该复写方法
+                    @Override
+                    public void onComplete() {
+                        Log.d(TAG, "请求成功");
+                    }
+                    // 发送请求失败后调用该复写方法
+                    @Override
+                    public void onError(Throwable e) {
+                        Log.d(TAG, "请求失败");
+                    }
+
+                });
+    }
+```
+实例：
+```
+ServerApi.defaultInstance() // ServerApi封装了domain 、Header、request response 解析 以及其他的一系列参数
+                .create(ApplyService.class) // 接口定义
+                .getLeaveType(new Request(new Object())) // request body
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new HylaaObserver<LeaveTypeEntity>() {
+                    @Override
+                    public void onNext(LeaveTypeEntity leaveTypeEntity) {
+                        // 处理
+                    }
+                });
+```
+#### 3.1.2 嵌套请求
+嵌套请求通过使用flatMap在处理完上一个请求之后返回下一个Observable
+
+栗子：
+```
+public class FileUpload {
+
+    public static Observable<List<FileEntity>> uploadFiles(Context context, List<String> images) {
+        List<Observable<?>> uploadRequests = new ArrayList<>();
+        for (String image : images) {
+            try {
+                if(!image.equals("ADD")) {
+                    uploadRequests.add(uploadFile(context, image));
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        if(uploadRequests.size() > 0) {
+            return Observable.zip(
+                    Observable.fromIterable(uploadRequests),
+                    new Function<Object[], List<FileEntity>>() {
+                        @Override
+                        public List<FileEntity> apply(Object[] objects) throws Exception {
+                            List<FileEntity> result = new ArrayList<>();
+                            for(int i = 0;i< objects.length; i++) {
+                                result.add((FileEntity) objects[i]);
+                            }
+                            return result;
+                        }
+                    }
+            );
+        }
+        return Observable.just(new ArrayList<>());
+
+    }
+
+    private static Observable<FileEntity> uploadFile(Context context, String image) {
+        return FileApi.defaultInstance()
+                .create(FileService.class)
+                .requestFileUpload(new FileRequestEntity(image.substring(image.lastIndexOf("/") + 1)))
+                .subscribeOn(Schedulers.io())
+                .observeOn(Schedulers.io())
+                .flatMap(fileUploadEntity -> {
+                    Map<String, RequestBody> requestBodyMap = new HashMap<>();
+                    for (String key : fileUploadEntity.getUploadParams().keySet()) {
+                        RequestBody requestBody = RequestBody.create(MediaType.parse("multipart/form-data"),
+                                fileUploadEntity.getUploadParams().get(key) == null ? "" : fileUploadEntity.getUploadParams().get(key));
+                        requestBodyMap.put(key, requestBody);
+                    }
+//                        RequestBody fileBody = RequestBody.create(MediaType.parse("image/*"), new File(image));
+                    requestBodyMap.put("success_action_status", RequestBody.create(MediaType.parse("multipart/form-data"), "200"));
+                    RequestBody fileBody = RequestBody.create(MediaType.parse("image/*"), new File(FileRealPath.getFilePathFromURI(context, image)));
+                    MultipartBody.Part file = MultipartBody.Part.createFormData("file", fileUploadEntity.getFileName(), fileBody);
+
+                    return Observable.zip(
+                            OSSFileApi.getInstance(fileUploadEntity.getUploadUrl())
+                                    .create(FileService.class)
+                                    .uploadFile(requestBodyMap, file),
+                            Observable.just(fileUploadEntity),
+                            new BiFunction<ResponseBody, FileUploadEntity, FileUploadEntity>() {
+                                @Override
+                                public FileUploadEntity apply(ResponseBody responseBody, FileUploadEntity fileUploadEntity) throws Exception {
+                                    if (responseBody != null) {
+                                        return fileUploadEntity;
+                                    } else {
+                                        throw new ServerException(10000, "Upload Failed");
+                                    }
+                                }
+                            }
+                    );
+                })
+                .subscribeOn(Schedulers.io())
+                .observeOn(Schedulers.io())
+                .flatMap(new Function<FileUploadEntity, ObservableSource<FileEntity>>() {
+                    @Override
+                    public ObservableSource<FileEntity> apply(FileUploadEntity fileUploadEntity) throws Exception {
+                        return Observable.zip(
+                                FileApi.defaultInstance()
+                                        .create(FileService.class)
+                                        .getFileInfo(new IdEntity(fileUploadEntity.getId()))
+                                        .subscribeOn(Schedulers.io())
+                                        .observeOn(Schedulers.io()),
+                                Observable.just(fileUploadEntity),
+                                new BiFunction<FileInfoEntity, FileUploadEntity, FileEntity>() {
+                                    @Override
+                                    public FileEntity apply(FileInfoEntity fileInfoEntity, FileUploadEntity fileUploadEntity) throws Exception {
+                                        return new FileEntity(
+                                                fileUploadEntity.getId(),
+                                                fileUploadEntity.getName(),
+                                                fileUploadEntity.getDownloadUrl(),
+                                                fileUploadEntity.getViewUrl(),
+                                                fileUploadEntity.getFileName().substring(fileUploadEntity.getFileName().lastIndexOf(".") + 1),
+                                                fileInfoEntity.getMime()
+                                        );
+                                    }
+                                }
+                        );
+                    }
+                });
+    }
+
+    private byte[] getBytes(String image) {
+        ByteArrayOutputStream out = null;
+        try {
+            InputStream in = new FileInputStream(new File(image));
+            out = new ByteArrayOutputStream();
+            byte[] b = new byte[1024];
+            int i = 0;
+            while ((i = in.read(b)) != -1) {
+                out.write(b, 0, b.length);
+            }
+            in.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return out.toByteArray();
+    }
+}
+```
+#### 3.1.3 重试
+```
+发送网络请求 & 通过retryWhen（）进行重试
+// 注：主要异常才会回调retryWhen（）进行重试
+observable.retryWhen(new Function<Observable<Throwable>, ObservableSource<?>>() {
+    @Override
+    public ObservableSource<?> apply(@NonNull Observable<Throwable> throwableObservable) throws Exception {
+        // 参数Observable<Throwable>中的泛型 = 上游操作符抛出的异常，可通过该条件来判断异常的类型
+        return throwableObservable.flatMap(new Function<Throwable, ObservableSource<?>>() {
+            @Override
+            public ObservableSource<?> apply(@NonNull Throwable throwable) throws Exception {
+
+                // 输出异常信息
+                Log.d(TAG,  "发生异常 = "+ throwable.toString());
+
+                /**
+                 * 需求1：根据异常类型选择是否重试
+                 * 即，当发生的异常 = 网络异常 = IO异常 才选择重试
+                 */
+                if (throwable instanceof IOException){
+
+                    Log.d(TAG,  "属于IO异常，需重试" );
+
+                    /**
+                     * 需求2：限制重试次数
+                     * 即，当已重试次数 < 设置的重试次数，才选择重试
+                     */
+                    if (currentRetryCount < maxConnectCount){
+
+                        // 记录重试次数
+                        currentRetryCount++;
+                        Log.d(TAG,  "重试次数 = " + currentRetryCount);
+
+                        /**
+                         * 需求2：实现重试
+                         * 通过返回的Observable发送的事件 = Next事件，从而使得retryWhen（）重订阅，最终实现重试功能
+                         *
+                         * 需求3：延迟1段时间再重试
+                         * 采用delay操作符 = 延迟一段时间发送，以实现重试间隔设置
+                         *
+                         * 需求4：遇到的异常越多，时间越长
+                         * 在delay操作符的等待时间内设置 = 每重试1次，增多延迟重试时间1s
+                         */
+                        // 设置等待时间
+                        waitRetryTime = 1000 + currentRetryCount* 1000;
+                        Log.d(TAG,  "等待时间 =" + waitRetryTime);
+                        return Observable.just(1).delay(waitRetryTime, TimeUnit.MILLISECONDS);
+
+
+                    }else{
+                        // 若重试次数已 > 设置重试次数，则不重试
+                        // 通过发送error来停止重试（可在观察者的onError（）中获取信息）
+                        return Observable.error(new Throwable("重试次数已超过设置次数 = " +currentRetryCount  + "，即 不再重"))
+
+                    }
+                }
+
+                // 若发生的异常不属于I/O异常，则不重试
+                // 通过返回的Observable发送的事件 = Error事件 实现（可在观察者的onError（）中获取信息）
+                else{
+                    return Observable.error(new Throwable("发生了非网络异常（非I/O异常）"));
+                }
+            }
+        });
+    }
+}).subscribeOn(Schedulers.io())               // 切换到IO线程进行网络请求
+        .observeOn(AndroidSchedulers.mainThread())  // 切换回到主线程 处理请求结果
+        .subscribe(new Observer<Translation>() {
+            @Override
+            public void onSubscribe(Disposable d) {
+            }
+
+            @Override
+            public void onNext(Translation result) {
+                // 接收服务器返回的数据
+                Log.d(TAG,  "发送成功");
+                result.show();
+            }
+
+            @Override
+            public void onError(Throwable e) {
+                // 获取停止重试的信息
+                Log.d(TAG,  e.toString());
+            }
+
+            @Override
+            public void onComplete() {
+
+            }
+        });
+
+ }
+
+```
