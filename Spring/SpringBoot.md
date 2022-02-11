@@ -440,5 +440,66 @@ public class SessionConfiguration {
 
 "spring:session:expirations:{时间戳}" ，是为了获得每分钟需要过期的 sessionid 集合，即 {时间戳} 是每分钟的时间戳。
 
-#### 1.7.1. Spring Security + Spring Session
+#### 1.7.1. Spring Security + Spring Session (TODO： 详细解释)
+Spring Security与 redis配置方式几乎相同 ，Spring Security在集成之后 redis中的session相关的字段被保护起来
 
+此处关于Session 不再过多展开，现在一版使用OAuth 2 以及JWT来做鉴权
+
+#### 1.8 JWT
+
+
+#### 1.9 Validation
+我个人建议 数据校验前端 后端都做一份。然后一般用javax.validation包来做数据校验，有以下几个注解：
+- @NotBlank ：只能用于字符串不为 null ，并且字符串 #trim() 以后 length 要大于 0 。
+- @NotEmpty ：集合对象的元素不为 0 ，即集合不为空，也可以用于字符串不为 null 。
+- @NotNull ：不能为 null 。
+- @Null ：必须为 null 。
+- @DecimalMax(value) ：被注释的元素必须是一个数字，其值必须小于等于指定的最大值。
+- @DecimalMin(value) ：被注释的元素必须是一个数字，其值必须大于等于指定的最小值。
+- @Digits(integer, fraction) ：被注释的元素必须是一个数字，其值必须在可接受的范围内。
+- @Positive ：判断正数。
+- @PositiveOrZero ：判断正数或 0 。
+- @Max(value) ：该字段的值只能小于或等于该值。
+- @Min(value) ：该字段的值只能大于或等于该值。
+- @Negative ：判断负数。
+- @NegativeOrZero ：判断负数或 0 。
+- Boolean 值检查
+- @AssertFalse ：被注释的元素必须为 true 。
+- @AssertTrue ：被注释的元素必须为 false 。
+- @Size(max, min) ：检查该字段的 size 是否在 min 和 max 之间，可以是字符串、数组、集合、Map 等。
+- @Future ：被注释的元素必须是一个将来的日期。
+- @FutureOrPresent ：判断日期是否是将来或现在日期。
+- @Past ：检查该字段的日期是在过去。
+- @PastOrPresent ：判断日期是否是过去或现在日期。
+- @Email ：被注释的元素必须是电子邮箱地址。
+- @Pattern(value) ：被注释的元素必须符合指定的正则表达式。
+
+@Valid 注解，是 Bean Validation 所定义，可以添加在普通方法、构造方法、方法参数、方法返回、成员变量上，表示它们需要进行约束校验。
+
+@Validated 注解，是 Spring Validation 锁定义，可以添加在类、方法参数、普通方法上，表示它们需要进行约束校验。同时，@Validated 有 value 属性，支持分组校验。
+
+绝大多数场景下，我们使用 @Validated 注解即可。而在有嵌套校验的场景，我们使用 @Valid 注解添加到成员属性上。
+
+对于这类型错误的提示消息可参照以下代码：
+```
+// GlobalExceptionHandler.java
+
+@ResponseBody
+@ExceptionHandler(value = BindException.class)
+public CommonResult bindExceptionHandler(HttpServletRequest req, BindException ex) {
+    logger.debug("[bindExceptionHandler]", ex);
+    // 拼接错误
+    StringBuilder detailMessage = new StringBuilder();
+    for (ObjectError objectError : ex.getAllErrors()) {
+        // 使用 ; 分隔多个错误
+        if (detailMessage.length() > 0) {
+            detailMessage.append(";");
+        }
+        // 拼接内容到其中
+        detailMessage.append(objectError.getDefaultMessage());
+    }
+    // 包装 CommonResult 结果
+    return CommonResult.error(ServiceExceptionEnum.INVALID_REQUEST_PARAM_ERROR.getCode(),
+            ServiceExceptionEnum.INVALID_REQUEST_PARAM_ERROR.getMessage() + ":" + detailMessage.toString());
+}
+```
